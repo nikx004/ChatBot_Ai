@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain_openai import ChatOpenAI, OpenAIEmbeddings
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain_community.vectorstores import Chroma
 
 app = FastAPI(title="Document AI Chatbot")
@@ -19,10 +19,10 @@ class Question(BaseModel):
 def startup_event():
     global embeddings, db, retriever, llm
 
-    embeddings = OpenAIEmbeddings(
-        openai_api_key=os.environ["OPENAI_API_KEY"]
-    )
-
+	embeddings = GoogleGenerativeAIEmbeddings(
+    		model="models/embedding-001",
+    		google_api_key=os.environ["GEMINI_API_KEY"]
+	)
     db = Chroma(
         persist_directory="vectorstore",
         embedding_function=embeddings
@@ -30,10 +30,10 @@ def startup_event():
 
     retriever = db.as_retriever(search_kwargs={"k": 10})
 
-    llm = ChatOpenAI(
-        model="gpt-3.5-turbo",
-        temperature=0,
-        openai_api_key=os.environ["OPENAI_API_KEY"]
+    llm = ChatGoogleGenerativeAI(
+ 	 model="gemini-1.5-flash",
+   	 temperature=0,
+   	 google_api_key=os.environ["GEMINI_API_KEY"]
     )
 
 @app.post("/ask")
