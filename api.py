@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_community.vectorstores import Chroma
 from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_community.llms import Ollama
+from langchain_openai import ChatOpenAI
+import os
 
 app = FastAPI(title="Internal Document Chatbot")
 
@@ -20,9 +21,10 @@ db = Chroma(
 retriever = db.as_retriever(search_kwargs={"k": 10})
 
 # Load LLM
-llm = Ollama(
-    model="mistral",
-    temperature=0
+llm = ChatOpenAI(
+    model="gpt-3.5-turbo",
+    temperature=0,
+    openai_api_key=os.environ["OPENAI_API_KEY"]
 )
 
 class Question(BaseModel):
