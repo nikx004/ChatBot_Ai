@@ -1,3 +1,5 @@
+import os
+
 from fastapi import FastAPI
 from pydantic import BaseModel
 from langchain_community.vectorstores import Chroma
@@ -52,4 +54,9 @@ Question:
 
     answer = llm.invoke(prompt)
     return {"answer": answer}
+
+if __name__ == "__main__":
+    import uvicorn
+    port = int(os.environ.get("PORT", 10000))
+    uvicorn.run("api:app", host="0.0.0.0", port=port)
 
