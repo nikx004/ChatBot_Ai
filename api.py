@@ -1,36 +1,40 @@
 import os
-
 from fastapi import FastAPI
 from pydantic import BaseModel
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_community.vectorstores import Chroma
-from langchain_community.embeddings import HuggingFaceEmbeddings
-from langchain_openai import ChatOpenAI
-import os
 
-app = FastAPI(title="Internal Document Chatbot")
+app = FastAPI(title="Document AI Chatbot")
 
-# Load embeddings
-embeddings = HuggingFaceEmbeddings(
-    model_name="sentence-transformers/all-MiniLM-L6-v2"
-)
-
-# Load vector database
-db = Chroma(
-    persist_directory="vectorstore",
-    embedding_function=embeddings
-)
-
-retriever = db.as_retriever(search_kwargs={"k": 10})
-
-# Load LLM
-llm = ChatOpenAI(
-    model="gpt-3.5-turbo",
-    temperature=0,
-    openai_api_key=os.environ["OPENAI_API_KEY"]
-)
+# ---- Lazy initialization (CRITICAL for Render) ----
+embeddings = None
+db = None
+retriever = None
+llm = None
 
 class Question(BaseModel):
     question: str
+
+@app.on_event("startup")
+def startup_event():
+    global embeddings, db, retriever, llm
+
+    embeddings = OpenAIEmbeddings(
+        openai_api_key=os.environ["OPENAI_API_KEY"]
+    )
+
+    db = Chroma(
+        persist_directory="vectorstore",
+        embedding_function=embeddings
+    )
+
+    retriever = db.as_retriever(search_kwargs={"k": 10})
+
+    llm = ChatOpenAI(
+        model="gpt-3.5-turbo",
+        temperature=0,
+        openai_api_key=os.environ["OPENAI_API_KEY"]
+    )
 
 @app.post("/ask")
 def ask(q: Question):
@@ -54,9 +58,4 @@ Question:
 
     answer = llm.invoke(prompt)
     return {"answer": answer}
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 10000))
-    uvicorn.run("api:app", host="0.0.0.0", port=port)
 
