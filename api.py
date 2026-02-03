@@ -1,40 +1,46 @@
 import os
 from fastapi import FastAPI
 from pydantic import BaseModel
-from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_google_genai import (
+    ChatGoogleGenerativeAI,
+    GoogleGenerativeAIEmbeddings,
+)
 from langchain_community.vectorstores import Chroma
 
-app = FastAPI(title="Document AI Chatbot")
+app = FastAPI(title="Internal Document Chatbot")
 
-# ---- Lazy initialization (CRITICAL for Render) ----
 embeddings = None
 db = None
 retriever = None
 llm = None
 
+
 class Question(BaseModel):
     question: str
+
 
 @app.on_event("startup")
 def startup_event():
     global embeddings, db, retriever, llm
 
-	embeddings = GoogleGenerativeAIEmbeddings(
-    		model="models/embedding-001",
-    		google_api_key=os.environ["GEMINI_API_KEY"]
-	)
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001",
+        google_api_key=os.environ["GEMINI_API_KEY"],
+    )
+
     db = Chroma(
         persist_directory="vectorstore",
-        embedding_function=embeddings
+        embedding_function=embeddings,
     )
 
     retriever = db.as_retriever(search_kwargs={"k": 10})
 
     llm = ChatGoogleGenerativeAI(
- 	 model="gemini-1.5-flash",
-   	 temperature=0,
-   	 google_api_key=os.environ["GEMINI_API_KEY"]
+        model="gemini-1.5-flash",
+        temperature=0,
+        google_api_key=os.environ["GEMINI_API_KEY"],
     )
+
 
 @app.post("/ask")
 def ask(q: Question):
@@ -56,6 +62,6 @@ Question:
 {q.question}
 """
 
-    answer = llm.invoke(prompt)
-    return {"answer": answer}
+    response = llm.invoke(prompt)
+    return {"answer": response.content}
 
