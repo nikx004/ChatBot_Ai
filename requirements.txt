@@ -2,7 +2,9 @@ fastapi
 uvicorn
 langchain
 langchain-community
+langchain-huggingface
 langchain-google-genai
+sentence-transfomers
 chromadb
 pypdf
 docx2txt

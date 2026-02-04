@@ -1,67 +1,114 @@
+# api.py
+
 import os
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
-from langchain_google_genai import (
-    ChatGoogleGenerativeAI,
-    GoogleGenerativeAIEmbeddings,
-)
+
 from langchain_community.vectorstores import Chroma
+from langchain_huggingface import HuggingFaceEmbeddings
+from langchain.prompts import PromptTemplate
+from langchain.chains import RetrievalQA
+from langchain_community.llms import HuggingFacePipeline
 
-app = FastAPI(title="Internal Document Chatbot")
+from ingest import ingest_documents
 
-embeddings = None
-db = None
-retriever = None
-llm = None
+# -----------------------------
+# Constants
+# -----------------------------
+VECTOR_DIR = "vectorstore"
 
+# -----------------------------
+# FastAPI app
+# -----------------------------
+app = FastAPI(
+    title="Internal Document Chatbot",
+    version="0.1.0"
+)
 
+# -----------------------------
+# Request model
+# -----------------------------
 class Question(BaseModel):
     question: str
 
-
+# -----------------------------
+# Startup: build vectorstore if missing
+# -----------------------------
 @app.on_event("startup")
 def startup_event():
-    global embeddings, db, retriever, llm
+    if not os.path.exists(VECTOR_DIR):
+        print("⚠️ Vectorstore not found. Running ingestion...")
+        ingest_documents()
+    else:
+        print("✅ Vectorstore already exists")
 
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001",
-        google_api_key=os.environ["GEMINI_API_KEY"],
-    )
+# -----------------------------
+# Load embeddings + vectorstore
+# -----------------------------
+embeddings = HuggingFaceEmbeddings(
+    model_name="sentence-transformers/all-MiniLM-L6-v2"
+)
 
-    db = Chroma(
-        persist_directory="vectorstore",
-        embedding_function=embeddings,
-    )
+db = Chroma(
+    persist_directory=VECTOR_DIR,
+    embedding_function=embeddings
+)
 
-    retriever = db.as_retriever(search_kwargs={"k": 10})
+retriever = db.as_retriever(search_kwargs={"k": 4})
 
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-1.5-flash",
-        temperature=0,
-        google_api_key=os.environ["GEMINI_API_KEY"],
-    )
+# -----------------------------
+# LLM (local CPU-safe model)
+# -----------------------------
+llm = HuggingFacePipeline.from_model_id(
+    model_id="google/flan-t5-base",
+    task="text2text-generation",
+    pipeline_kwargs={"max_new_tokens": 512}
+)
 
-
-@app.post("/ask")
-def ask(q: Question):
-    docs = retriever.invoke(q.question)
-
-    if not docs:
-        return {"answer": "Information not found in provided documents."}
-
-    context = "\n\n".join(d.page_content for d in docs)
-
-    prompt = f"""
-Answer ONLY using the context below.
-If the answer is not present, say so clearly.
+# -----------------------------
+# Prompt
+# -----------------------------
+PROMPT = PromptTemplate(
+    template="""
+You are an internal company assistant.
+Answer ONLY using the provided context.
+If the answer is not found, say:
+"Information not found in the provided documents."
 
 Context:
 {context}
 
 Question:
-{q.question}
-"""
+{question}
 
-    response = llm.invoke(prompt)
-    return {"answer": response.content}
+Answer:
+""",
+    input_variables=["context", "question"]
+)
+
+# -----------------------------
+# QA Chain
+# -----------------------------
+qa_chain = RetrievalQA.from_chain_type(
+    llm=llm,
+    chain_type="stuff",
+    retriever=retriever,
+    chain_type_kwargs={"prompt": PROMPT},
+    return_source_documents=False
+)
+
+# -----------------------------
+# Routes
+# -----------------------------
+@app.get("/")
+def root():
+    return {"status": "ok", "message": "Internal Document Chatbot API running"}
+
+@app.post("/ask")
+def ask_question(payload: Question):
+    try:
+        result = qa_chain.run(payload.question)
+        return {"answer": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
